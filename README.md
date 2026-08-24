@@ -66,11 +66,136 @@ cargo build --release
 All commands accept `--dry-run` (show the plan, change nothing), `--yes`
 (skip confirmations), and `--json` (structured output).
 
-```bash
-forja sync
-forja cleanup --dry-run
-forja setup --config ~/.dotfiles/forja.toml
+---
+
+## Usage
+
+### `forja doctor` — check your environment
+
+Run this first on any machine. It never changes anything.
+
 ```
+$ forja doctor
+  ✓ git: 2.43.0
+  ✓ gh: gh version 2.40.1 (2023-12-13)
+  ✓ gh auth: authenticated
+```
+
+Missing `gh` (or being logged out) is only a warning in the current MVP —
+`forja` doesn't need GitHub for `sync`/`cleanup`. A missing or too-old `git`
+is the only thing that fails the check (exit `3`).
+
+### `forja init` — scaffold a config
+
+```
+$ forja init
+wrote ./forja.toml
+```
+
+Generates a commented `forja.toml` with every field but `version` commented
+out — `forja` never invents your name or email. Uncomment and fill in what
+you want; everything is optional.
+
+### `forja show` — see what forja actually loaded
+
+Read-only — never invokes `git`, never mutates anything.
+
+```
+$ forja show
+version: 1
+
+[git]
+  user_name      = Ada Lovelace
+  user_email     = ada@example.com
+  default_branch = main
+
+  [git.aliases]
+    st = "status -sb"
+
+[flow]
+  strategy           = rebase
+  auto_push          = true
+  base_branch        = (detected from remote)
+  protected_branches = ["main", "master"]
+```
+
+Useful for confirming defaults are what you expect, or piping `--json` into
+another tool.
+
+### `forja setup` — apply your `[git]` config
+
+Preview first, then apply:
+
+```
+$ forja --dry-run setup
+  user.name : (unset) -> Ada Lovelace
+  user.email : (unset) -> ada@example.com
+  alias.st : (unset) -> status -sb
+
+$ forja setup
+  user.name : (unset) -> Ada Lovelace
+  user.email : (unset) -> ada@example.com
+  alias.st : (unset) -> status -sb
+applied 3 of 3 change(s)
+
+$ forja setup
+git config already matches forja.toml — no changes needed
+```
+
+Only fields that actually diverge get written — running it again reports
+zero changes. Your existing `~/.gitconfig` is backed up to
+`~/.gitconfig.forja.bak` before the first write.
+
+### `forja sync` — fetch, integrate, push, in one safe step
+
+```
+$ forja sync
+Current branch: feature/login
+Base:           origin/main
+
+  ✓ working tree is clean
+  ✓ branch is not protected
+  → git fetch origin
+  → git rebase origin/main
+  → git push --force-with-lease origin feature/login
+feature/login synced with origin/main and pushed.
+```
+
+If anything is off, `sync` refuses instead of guessing — and exits before
+touching your repository:
+
+```
+$ forja sync
+error: working tree is dirty (1 file(s) changed)
+
+Aborted before any changes. Commit or stash your changes:
+  git stash push -m "wip"
+$ echo $?
+4
+```
+
+The same happens on a protected branch (`main`/`master` by default), when
+the base branch can't be determined, or when a rebase hits a real conflict
+— `forja` leaves the repo exactly where git left it and lets you resolve it
+by hand (`git rebase --continue` / `--abort`).
+
+### `forja cleanup` — delete branches git already knows are done
+
+A branch only qualifies if it's **both** merged into the base branch **and**
+confirmed deleted on the remote — never a branch you simply never pushed.
+
+```
+$ forja cleanup
+branches to delete (merged and removed on the remote):
+  - feature/login
+  - hotfix/typo
+delete these branches? [y/N] y
+deleted 2 of 2 branch(es)
+```
+
+Skip the prompt in scripts with `--yes`; preview with `--dry-run`. Deletion
+always uses `git branch -d`, never `-D` — an unmerged branch is refused by
+git itself even if something upstream miscalculates.
 
 ---
 
