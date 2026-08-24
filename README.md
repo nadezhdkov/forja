@@ -27,15 +27,28 @@ want to type the same six-command sequence for the hundredth time.
 
 ---
 
-## Getting Started
+## Installation
 
 ```bash
+cargo install --git https://github.com/nadezhdkov/forja forja
+```
+
+Builds `forja` from source and puts it on your `PATH` via `~/.cargo/bin`.
+Requires the [Rust toolchain](https://rustup.rs) and `git` >= 2.23 on
+`PATH`. `gh` is optional (only needed once GitHub flows land in a later
+phase).
+
+Prebuilt binaries (no Rust toolchain needed) are planned via `cargo-dist`
+but not published yet — for now, building from source is the way to install.
+
+### Building from source (for local development)
+
+```bash
+git clone https://github.com/nadezhdkov/forja.git
+cd forja
 cargo build --release
 ./target/release/forja --help
 ```
-
-Requires `git` >= 2.23 on `PATH`. `gh` is optional (only needed once GitHub
-flows land in a later phase).
 
 ---
 
