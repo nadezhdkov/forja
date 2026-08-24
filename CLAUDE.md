@@ -14,8 +14,39 @@ into single, safe, predictable commands. Two pillars:
 2. **Compliance** — a declarative `forja.toml` describing desired git
    configuration, applied idempotently (`setup`, `show`, `doctor`).
 
-Status: pre-implementation. Only the PRD exists so far — no Cargo project has
-been scaffolded yet.
+Status: **M0 done.** The workspace exists and `forja show` works end-to-end;
+`init`, `doctor`, `setup`, `sync`, `cleanup` (M1) are not implemented yet.
+
+## Current architecture
+
+Cargo workspace with two crates (`crates/`):
+
+- **`forja-core`** (lib, no `clap` dependency) — the domain layer:
+  - `config/` — `RawConfig`/`RawGitConfig`/`RawFlowConfig` (`schema.rs`)
+    deserialize every field as `Option<toml::Value>` rather than a typed
+    field. This is deliberate: it defers type-checking to the validation
+    pass in `mod.rs`, which is what lets RF-02 collect *every* problem in
+    one config instead of failing on the first `serde` type mismatch.
+    `mod.rs` also normalizes into `ForjaConfig`/`GitConfig`/`FlowConfig`
+    with defaults applied, and captures unknown keys into a `warnings: Vec<String>`
+    (DD-06) via `#[serde(flatten)]` into a `toml::Table` at every level.
+  - `error.rs` — `ForjaError` (thiserror), with `exit_code()` mapping each
+    variant to the §9.2 contract. Add new variants here as new failure modes
+    show up; extend `exit_code()` in the same commit.
+  - `exec.rs` — `CommandRunner` trait + `SystemCommandRunner`, always
+    spawning via argument vector (§15). `sync`/`cleanup`/`setup` should all
+    go through this rather than calling `std::process::Command` directly, so
+    they stay testable against a fake runner.
+- **`forja`** (bin) — thin CLI: `cli.rs` (clap derive, global flags),
+  `commands/<name>.rs` per subcommand, `main.rs` dispatches and turns
+  `ForjaError` into `eprintln!` + `exit_code()`. Adding a subcommand means:
+  add a `Command` variant in `cli.rs`, a `commands/<name>.rs`, one match arm
+  in `main.rs` — this is the RF-07 pattern to keep following for `init`,
+  `doctor`, `setup`, `sync`, `cleanup`.
+
+Tests: unit tests live next to the code they cover (`#[cfg(test)] mod tests`
+in `config/mod.rs` and `exec.rs`); CLI-level integration tests live in
+`crates/forja/tests/` using `assert_cmd` against temp config files.
 
 ## Non-negotiable rules (do not violate without asking the user)
 
@@ -62,9 +93,11 @@ dangerous." Every DD-08 rule needs a dedicated test asserting exit 4.
 ## MVP scope (§7.1) — build this first, nothing more
 
 `init`, `show`, `doctor`, `setup`, `sync`, `cleanup`, plus the global
-`--dry-run` flag. `sync` and `cleanup` are purely local (git only, no `gh`,
-no network auth) — keep it that way until the MVP is validated with 2 weeks
-of real use (§7.1, §18 M1.5). Do not start on GitHub integration (`pr`,
+`--dry-run` flag. `show` is done (M0); `init`, `doctor`, `setup`, `sync`, and
+`cleanup` are the remaining M1 work. `sync` and `cleanup` are purely local
+(git only, no `gh`, no network auth) — keep it that way until the MVP is
+validated with 2 weeks of real use (§7.1, §18 M1.5). Do not start on GitHub
+integration (`pr`,
 `repo new`), profiles, `forja capture`, multi-path config lookup, or runtime
 verification until that milestone is met (Regra de progressão, §7.3).
 
