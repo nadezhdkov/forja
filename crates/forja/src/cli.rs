@@ -39,6 +39,19 @@ pub struct Cli {
 pub enum Command {
     /// Display the loaded, normalized config. Read-only.
     Show,
+
+    /// Generate a commented forja.toml scaffold.
+    Init {
+        /// Overwrite the file if it already exists.
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Check that git and gh are installed and ready to use.
+    Doctor,
+
+    /// Apply the [git] section of the config via `git config --global`.
+    Setup,
 }
 
 impl Cli {

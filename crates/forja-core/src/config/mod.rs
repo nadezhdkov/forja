@@ -100,7 +100,10 @@ pub fn load_config(path: &Path) -> Result<LoadOutcome, ForjaError> {
     collect_unknown_keys("", &raw.extra, &mut warnings);
 
     let version = validate_version(&raw, &mut errors);
-    let git = raw.git.as_ref().map(|g| validate_git(g, &mut errors, &mut warnings));
+    let git = raw
+        .git
+        .as_ref()
+        .map(|g| validate_git(g, &mut errors, &mut warnings));
     let flow = validate_flow(raw.flow.as_ref(), &mut errors, &mut warnings);
 
     if !errors.is_empty() {
@@ -158,8 +161,9 @@ fn validate_git(
 
     let user_name = required_non_empty_string(&raw.user_name, "git.user_name", errors);
     let user_email = required_email(&raw.user_email, "git.user_email", errors);
-    let default_branch = optional_non_empty_string(&raw.default_branch, "git.default_branch", errors)
-        .unwrap_or_else(|| "main".to_string());
+    let default_branch =
+        optional_non_empty_string(&raw.default_branch, "git.default_branch", errors)
+            .unwrap_or_else(|| "main".to_string());
     let editor = optional_non_empty_string(&raw.editor, "git.editor", errors);
     let pull_rebase = optional_bool(&raw.pull_rebase, "git.pull_rebase", errors);
     let aliases = validate_aliases(raw, errors);
@@ -174,12 +178,16 @@ fn validate_git(
     }
 }
 
-fn validate_aliases(raw: &RawGitConfig, errors: &mut Vec<ValidationError>) -> BTreeMap<String, String> {
+fn validate_aliases(
+    raw: &RawGitConfig,
+    errors: &mut Vec<ValidationError>,
+) -> BTreeMap<String, String> {
     let Some(aliases) = &raw.aliases else {
         return BTreeMap::new();
     };
 
-    let name_pattern = Regex::new(ALIAS_NAME_PATTERN).expect("alias name pattern is a valid, fixed regex");
+    let name_pattern =
+        Regex::new(ALIAS_NAME_PATTERN).expect("alias name pattern is a valid, fixed regex");
     let mut result = BTreeMap::new();
 
     for (name, value) in &aliases.entries {
@@ -197,7 +205,10 @@ fn validate_aliases(raw: &RawGitConfig, errors: &mut Vec<ValidationError>) -> BT
             Some(s) if !s.is_empty() => {
                 result.insert(name.clone(), s.to_string());
             }
-            Some(_) => errors.push(ValidationError::new(&field, "alias value must not be empty")),
+            Some(_) => errors.push(ValidationError::new(
+                &field,
+                "alias value must not be empty",
+            )),
             None => errors.push(ValidationError::new(&field, "alias value must be a string")),
         }
     }
@@ -219,9 +230,10 @@ fn validate_flow(
 
     let base_branch = optional_non_empty_string(&raw.base_branch, "flow.base_branch", errors);
     let strategy = validate_strategy(&raw.strategy, errors).unwrap_or(defaults.strategy);
-    let auto_push = optional_bool(&raw.auto_push, "flow.auto_push", errors).unwrap_or(defaults.auto_push);
-    let protected_branches =
-        validate_protected_branches(&raw.protected_branches, errors).unwrap_or(defaults.protected_branches);
+    let auto_push =
+        optional_bool(&raw.auto_push, "flow.auto_push", errors).unwrap_or(defaults.auto_push);
+    let protected_branches = validate_protected_branches(&raw.protected_branches, errors)
+        .unwrap_or(defaults.protected_branches);
 
     FlowConfig {
         base_branch,
@@ -231,7 +243,10 @@ fn validate_flow(
     }
 }
 
-fn validate_strategy(value: &Option<toml::Value>, errors: &mut Vec<ValidationError>) -> Option<Strategy> {
+fn validate_strategy(
+    value: &Option<toml::Value>,
+    errors: &mut Vec<ValidationError>,
+) -> Option<Strategy> {
     let value = value.as_ref()?;
     match value.as_str() {
         Some("rebase") => Some(Strategy::Rebase),
@@ -300,7 +315,11 @@ fn required_non_empty_string(
     }
 }
 
-fn required_email(value: &Option<toml::Value>, field: &str, errors: &mut Vec<ValidationError>) -> Option<String> {
+fn required_email(
+    value: &Option<toml::Value>,
+    field: &str,
+    errors: &mut Vec<ValidationError>,
+) -> Option<String> {
     let email = required_non_empty_string(value, field, errors)?;
     if email.contains('@') {
         Some(email)
@@ -329,7 +348,11 @@ fn optional_non_empty_string(
     }
 }
 
-fn optional_bool(value: &Option<toml::Value>, field: &str, errors: &mut Vec<ValidationError>) -> Option<bool> {
+fn optional_bool(
+    value: &Option<toml::Value>,
+    field: &str,
+    errors: &mut Vec<ValidationError>,
+) -> Option<bool> {
     let value = value.as_ref()?;
     match value.as_bool() {
         Some(b) => Some(b),
@@ -355,7 +378,8 @@ mod tests {
 
     fn load(contents: &str) -> Result<LoadOutcome, ForjaError> {
         let mut file = tempfile::NamedTempFile::new().expect("create temp file");
-        file.write_all(contents.as_bytes()).expect("write temp file");
+        file.write_all(contents.as_bytes())
+            .expect("write temp file");
         load_config(file.path())
     }
 
@@ -401,7 +425,9 @@ mod tests {
 
     #[test]
     fn user_email_without_at_sign_is_rejected() {
-        let err = load("version = \"1\"\n[git]\nuser_name = \"Ada\"\nuser_email = \"not-an-email\"\n").unwrap_err();
+        let err =
+            load("version = \"1\"\n[git]\nuser_name = \"Ada\"\nuser_email = \"not-an-email\"\n")
+                .unwrap_err();
         let ForjaError::Validation { errors, .. } = err else {
             panic!("expected a validation error, got {err:?}");
         };
@@ -420,7 +446,8 @@ mod tests {
 
     #[test]
     fn unknown_root_key_is_a_warning_not_an_error() {
-        let outcome = load("version = \"1\"\nfrobnicate = true\n").expect("should load despite unknown key");
+        let outcome =
+            load("version = \"1\"\nfrobnicate = true\n").expect("should load despite unknown key");
         assert!(outcome.warnings.iter().any(|w| w.contains("frobnicate")));
     }
 

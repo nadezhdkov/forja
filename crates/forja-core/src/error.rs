@@ -83,6 +83,16 @@ pub enum ForjaError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("config file already exists: {path}\n\npass --force to overwrite it")]
+    ConfigAlreadyExists { path: PathBuf },
+
+    #[error("command failed: `{command}` (exit {exit_code:?})\n{stderr}")]
+    CommandFailed {
+        command: String,
+        stderr: String,
+        exit_code: Option<i32>,
+    },
 }
 
 impl ForjaError {
@@ -96,8 +106,10 @@ impl ForjaError {
             ForjaError::ConfigNotFound { .. }
             | ForjaError::Io { .. }
             | ForjaError::TomlParse { .. }
-            | ForjaError::Validation { .. } => 2,
+            | ForjaError::Validation { .. }
+            | ForjaError::ConfigAlreadyExists { .. } => 2,
             ForjaError::CommandSpawn { .. } => 3,
+            ForjaError::CommandFailed { .. } => 1,
         }
     }
 }

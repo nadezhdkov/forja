@@ -15,7 +15,10 @@ pub struct CommandRequest {
 }
 
 impl CommandRequest {
-    pub fn new(program: impl Into<String>, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    pub fn new(
+        program: impl Into<String>,
+        args: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
         Self {
             program: program.into(),
             args: args.into_iter().map(Into::into).collect(),
@@ -84,7 +87,10 @@ mod tests {
     fn reports_spawn_failure_for_a_nonexistent_program() {
         let runner = SystemCommandRunner;
         let err = runner
-            .run(&CommandRequest::new("forja-nonexistent-binary-xyz", Vec::<String>::new()))
+            .run(&CommandRequest::new(
+                "forja-nonexistent-binary-xyz",
+                Vec::<String>::new(),
+            ))
             .expect_err("spawning a nonexistent program should fail");
 
         assert_eq!(err.exit_code(), 3);

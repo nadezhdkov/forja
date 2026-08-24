@@ -12,8 +12,8 @@ pub fn run(config_path: &Path, json: bool) -> Result<(), ForjaError> {
     }
 
     if json {
-        let rendered =
-            serde_json::to_string_pretty(&outcome.config).expect("ForjaConfig serialization cannot fail");
+        let rendered = serde_json::to_string_pretty(&outcome.config)
+            .expect("ForjaConfig serialization cannot fail");
         println!("{rendered}");
     } else {
         print_human(&outcome.config);
@@ -60,7 +60,11 @@ fn print_human(config: &ForjaConfig) {
     println!("  auto_push          = {}", config.flow.auto_push);
     println!(
         "  base_branch        = {}",
-        config.flow.base_branch.as_deref().unwrap_or("(detected from remote)")
+        config
+            .flow
+            .base_branch
+            .as_deref()
+            .unwrap_or("(detected from remote)")
     );
     println!(
         "  protected_branches = [{}]",

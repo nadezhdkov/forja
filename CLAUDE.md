@@ -14,8 +14,10 @@ into single, safe, predictable commands. Two pillars:
 2. **Compliance** — a declarative `forja.toml` describing desired git
    configuration, applied idempotently (`setup`, `show`, `doctor`).
 
-Status: **M0 done.** The workspace exists and `forja show` works end-to-end;
-`init`, `doctor`, `setup`, `sync`, `cleanup` (M1) are not implemented yet.
+Status: **M0 done; M1 in progress.** `show`, `init`, `doctor`, and `setup` are
+implemented end-to-end. `sync` and `cleanup` — the two flows that carry the
+DD-08 safety rules — are the remaining M1 work, and get their own plan since
+they're the highest-risk commands in the product.
 
 ## Current architecture
 
@@ -37,12 +39,37 @@ Cargo workspace with two crates (`crates/`):
     spawning via argument vector (§15). `sync`/`cleanup`/`setup` should all
     go through this rather than calling `std::process::Command` directly, so
     they stay testable against a fake runner.
+  - `template.rs` — the static `forja init` scaffold (everything but
+    `version` commented out; `init` never invents a name/email).
+  - `doctor.rs` — `run_checks(&dyn CommandRunner) -> DoctorReport`. Pure
+    domain logic: parses `git --version`/`gh --version`/`gh auth status`
+    output and classifies each into `Ok`/`Warning`/`Failed`. `gh` absence or
+    no-auth is always `Warning`, never `Failed`, per RF-05 in the MVP.
+  - `setup.rs` — `compute_plan`/`apply_plan`. `compute_plan` reads current
+    state one `git config --global --get <key>` at a time (DD-04) and only
+    includes keys that actually diverge (RF-07). `default_branch` is always
+    considered (it's a plain `String` with a default already applied at
+    config-load time), while `editor`/`pull_rebase` — which stayed
+    `Option<T>` through normalization — are only considered when `Some`,
+    which is what keeps "absent optional fields are never written" true.
+    `apply_plan` returns an `ApplyOutcome { applied, error }` rather than a
+    bare `Result`, so a failure partway through still reports what already
+    succeeded (RF-11, DD-02).
 - **`forja`** (bin) — thin CLI: `cli.rs` (clap derive, global flags),
   `commands/<name>.rs` per subcommand, `main.rs` dispatches and turns
-  `ForjaError` into `eprintln!` + `exit_code()`. Adding a subcommand means:
-  add a `Command` variant in `cli.rs`, a `commands/<name>.rs`, one match arm
-  in `main.rs` — this is the RF-07 pattern to keep following for `init`,
-  `doctor`, `setup`, `sync`, `cleanup`.
+  `ForjaError` into `eprintln!` + `exit_code()`. `doctor` is the one
+  exception to that dispatch pattern — it returns a `DoctorReport` instead of
+  a `Result`, and `main.rs` maps `report.has_failure()` to exit 3 directly,
+  since an individual check failing is data, not a control-flow error.
+  Adding a subcommand otherwise means: add a `Command` variant in `cli.rs`, a
+  `commands/<name>.rs`, one match arm in `main.rs` — the RF-07 pattern to
+  keep following for `sync`/`cleanup`.
+- `commands/setup.rs` also owns backing up the global gitconfig before the
+  first write of a run (`~/.gitconfig.forja.bak`, §15) — it resolves the
+  target file via `GIT_CONFIG_GLOBAL` first, falling back to `~/.gitconfig`,
+  so the backup always matches the file `git config --global` is about to
+  touch (this is also what makes it safe to test against a temp file per
+  §13).
 
 Tests: unit tests live next to the code they cover (`#[cfg(test)] mod tests`
 in `config/mod.rs` and `exec.rs`); CLI-level integration tests live in

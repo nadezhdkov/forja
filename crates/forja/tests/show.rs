@@ -5,7 +5,8 @@ use predicates::str::contains;
 
 fn write_config(contents: &str) -> tempfile::NamedTempFile {
     let mut file = tempfile::NamedTempFile::new().expect("create temp config file");
-    file.write_all(contents.as_bytes()).expect("write temp config file");
+    file.write_all(contents.as_bytes())
+        .expect("write temp config file");
     file
 }
 
