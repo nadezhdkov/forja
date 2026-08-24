@@ -14,10 +14,12 @@ into single, safe, predictable commands. Two pillars:
 2. **Compliance** — a declarative `forja.toml` describing desired git
    configuration, applied idempotently (`setup`, `show`, `doctor`).
 
-Status: **M0 done; M1 in progress.** `show`, `init`, `doctor`, and `setup` are
-implemented end-to-end. `sync` and `cleanup` — the two flows that carry the
-DD-08 safety rules — are the remaining M1 work, and get their own plan since
-they're the highest-risk commands in the product.
+Status: **M1 done — the full MVP (PRD §7.1) is implemented.** All seven MVP
+items (`init`, `show`, `doctor`, `setup`, `sync`, `cleanup`, `--dry-run`)
+work end-to-end with tests. Per the phase-progression rule (§7.3, R-01),
+**Phase 2 (`pr`, `repo new`, `gh` integration) should not start** until
+`sync`/`cleanup` have had two weeks of real daily use (§18, M1.5) — flag it
+if asked to start on that before then.
 
 ## Current architecture
 
@@ -55,6 +57,30 @@ Cargo workspace with two crates (`crates/`):
     `apply_plan` returns an `ApplyOutcome { applied, error }` rather than a
     bare `Result`, so a failure partway through still reports what already
     succeeded (RF-11, DD-02).
+  - `sync.rs` — `plan_sync`/`execute_sync`, implementing RF-09 and DD-08.
+    `plan_sync` runs only the read-only RF-09 preconditions (repo check,
+    clean-tree check, protected-branch check, base-branch detection) and
+    never touches the repo; `execute_sync` does the actual
+    fetch/rebase-or-merge/push. Base branch is always stored as a **plain
+    name** (`"main"`, never `"origin/main"`) — an explicit `flow.base_branch`
+    wins outright, otherwise it's read from `origin/HEAD` and the `origin/`
+    prefix is stripped, so the rest of the code never has to care which
+    source a name came from. `ensure_git_repo`, `current_branch`, and
+    `detect_base_branch` are `pub(crate)` because `cleanup.rs` reuses them
+    directly rather than duplicating the same three `git` invocations.
+    Conflict detection is a string check for `"CONFLICT"` in the
+    rebase/merge output — deliberately not `--abort`/`--continue`; DD-08
+    requires leaving the repo exactly where git left it.
+  - `cleanup.rs` — `plan_cleanup`/`delete_branches`, implementing RF-10.
+    A candidate must be **both** merged into the base branch (`git branch
+    --merged origin/<base>`) **and** have an upstream `git` confirms is
+    gone (`%(upstream:track)` containing `[gone]` in `for-each-ref`) —
+    intentionally narrower than "never had an upstream," so a branch the
+    user simply never pushed is never touched even if merged. Deletion
+    uses `git branch -d` (never `-D`): git's own safe-delete refusal on an
+    unmerged branch is a second, independent enforcement of DD-08 beyond
+    the `--merged` filter above — that redundancy is deliberate, not
+    an oversight to simplify away.
 - **`forja`** (bin) — thin CLI: `cli.rs` (clap derive, global flags),
   `commands/<name>.rs` per subcommand, `main.rs` dispatches and turns
   `ForjaError` into `eprintln!` + `exit_code()`. `doctor` is the one
@@ -62,18 +88,36 @@ Cargo workspace with two crates (`crates/`):
   a `Result`, and `main.rs` maps `report.has_failure()` to exit 3 directly,
   since an individual check failing is data, not a control-flow error.
   Adding a subcommand otherwise means: add a `Command` variant in `cli.rs`, a
-  `commands/<name>.rs`, one match arm in `main.rs` — the RF-07 pattern to
-  keep following for `sync`/`cleanup`.
+  `commands/<name>.rs`, one match arm in `main.rs` (RF-07).
 - `commands/setup.rs` also owns backing up the global gitconfig before the
   first write of a run (`~/.gitconfig.forja.bak`, §15) — it resolves the
   target file via `GIT_CONFIG_GLOBAL` first, falling back to `~/.gitconfig`,
   so the backup always matches the file `git config --global` is about to
   touch (this is also what makes it safe to test against a temp file per
   §13).
+- `commands/cleanup.rs` is the only place that reads stdin (a plain
+  `y`/`yes` confirmation, skippable with `--yes`) — nothing else in the CLI
+  is interactive.
+- **Exit-code split within a single flow (`sync`, established for future
+  flows too):** only the RF-09 *verification* steps, failed base-branch
+  detection, and a detected rebase/merge conflict use **exit 4** — nothing
+  was changed, or `forja` deliberately refused. A `fetch`/`push` that fails
+  for an external reason (network, permissions, a `--force-with-lease`
+  rejection) is **exit 1** via `ForjaError::CommandFailed` — that's an
+  external command failing, not a safety refusal. Keep this split when
+  adding new flows: exit 4 is earned by "nothing happened yet" or "git left
+  us in a state we won't paper over," not by "a git command returned
+  non-zero."
 
-Tests: unit tests live next to the code they cover (`#[cfg(test)] mod tests`
-in `config/mod.rs` and `exec.rs`); CLI-level integration tests live in
-`crates/forja/tests/` using `assert_cmd` against temp config files.
+Tests: unit tests live next to the code they cover (`#[cfg(test)] mod tests`,
+each with its own small fake `CommandRunner` keyed by `(program, args)` —
+see `sync.rs`/`cleanup.rs`/`doctor.rs`/`setup.rs` for the pattern). CLI-level
+integration tests live in `crates/forja/tests/` using `assert_cmd`.
+`sync`/`cleanup` integration tests use a shared `tests/common/mod.rs`
+(`TestRepo`) that builds a real bare "origin" plus a working clone per PRD
+§13 — no network, no GitHub, real `git` throughout. That module carries
+`#![allow(dead_code)]` because each integration test binary only exercises a
+subset of its helpers; that's expected, not a sign of dead code to prune.
 
 ## Non-negotiable rules (do not violate without asking the user)
 
@@ -117,16 +161,15 @@ Exit code 4 is the most important one to get right in tests: it's what
 distinguishes "the tool broke" from "the tool refused to do something
 dangerous." Every DD-08 rule needs a dedicated test asserting exit 4.
 
-## MVP scope (§7.1) — build this first, nothing more
+## MVP scope (§7.1) — all seven items now implemented
 
-`init`, `show`, `doctor`, `setup`, `sync`, `cleanup`, plus the global
-`--dry-run` flag. `show` is done (M0); `init`, `doctor`, `setup`, `sync`, and
-`cleanup` are the remaining M1 work. `sync` and `cleanup` are purely local
-(git only, no `gh`, no network auth) — keep it that way until the MVP is
-validated with 2 weeks of real use (§7.1, §18 M1.5). Do not start on GitHub
-integration (`pr`,
-`repo new`), profiles, `forja capture`, multi-path config lookup, or runtime
-verification until that milestone is met (Regra de progressão, §7.3).
+`init`, `show`, `doctor`, `setup`, `sync`, `cleanup`, and `--dry-run` are all
+done. `sync` and `cleanup` are purely local (git only, no `gh`, no network
+auth), as required — this must stay true until the MVP is validated with 2
+weeks of real use (§7.1, §18 M1.5). Do not start on GitHub integration
+(`pr`, `repo new`), profiles, `forja capture`, multi-path config lookup, or
+runtime verification until that milestone is met (Regra de progressão,
+§7.3) — this is the current gate on all further scope.
 
 ## Config schema (`forja.toml`, §8)
 
@@ -179,11 +222,19 @@ verification until that milestone is met (Regra de progressão, §7.3).
   plus one registration line — no changes to parsing, CLI, or the command
   executor (RNF-07).
 
-## Open questions to flag, not silently resolve (§17)
+## Open questions (§17) — resolved vs. still open
 
-If work touches any of these, surface the question instead of picking an
-answer: branch-name validation (`forja` name itself is provisional, QA-01),
-whether `sync` should ever fast-forward on a protected branch (QA-02), base
-branch detection precedence (QA-03), whether `git config` scope should ever
-include `--local` (QA-04), whether push-flows should confirm by default
-(QA-05).
+**Resolved during implementation** (don't re-litigate without a reason):
+- **QA-02** — `sync` on a protected branch always aborts (exit 4). No
+  fast-forward exception; DD-08 stays absolute.
+- **QA-03** — Base branch, when `flow.base_branch` isn't set, comes purely
+  from `origin/HEAD`. `[git].default_branch` is never consulted as a
+  fallback for this.
+- **QA-05** — `sync` never confirms, including before push (matches §9.4
+  and N5). `cleanup` still confirms before deleting, skippable with `--yes`.
+
+**Still open** — flag instead of silently deciding:
+- **QA-01** — the `forja` name itself is provisional (validation checklist
+  in PRD §17).
+- **QA-04** — whether `setup`'s `git config` scope should ever extend to
+  `--local`. MVP is `--global` only.

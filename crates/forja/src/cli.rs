@@ -52,6 +52,12 @@ pub enum Command {
 
     /// Apply the [git] section of the config via `git config --global`.
     Setup,
+
+    /// Fetch, rebase (or merge) onto the base branch, and push.
+    Sync,
+
+    /// Delete local branches already merged and deleted on the remote.
+    Cleanup,
 }
 
 impl Cli {

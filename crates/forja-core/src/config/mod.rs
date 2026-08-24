@@ -123,6 +123,20 @@ pub fn load_config(path: &Path) -> Result<LoadOutcome, ForjaError> {
     })
 }
 
+/// Loads just the `[flow]` section for `sync`/`cleanup`, tolerating a
+/// missing file (RF-01: flows work with zero config). A file that exists
+/// but is invalid is still reported — even if the problem is in `[git]`,
+/// which flows never read — because a broken `forja.toml` should never be
+/// silently ignored.
+pub fn load_flow_config(path: &Path) -> Result<(FlowConfig, Vec<String>), ForjaError> {
+    if !path.exists() {
+        return Ok((FlowConfig::default(), Vec::new()));
+    }
+
+    let outcome = load_config(path)?;
+    Ok((outcome.config.flow, outcome.warnings))
+}
+
 fn validate_version(raw: &RawConfig, errors: &mut Vec<ValidationError>) -> Option<String> {
     match &raw.version {
         None => {

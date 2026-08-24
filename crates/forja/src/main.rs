@@ -21,6 +21,8 @@ fn main() {
         Command::Show => commands::show::run(&cli.config, cli.json),
         Command::Init { force } => commands::init::run(&cli.config, force),
         Command::Setup => commands::setup::run(&cli.config, cli.dry_run, cli.json),
+        Command::Sync => commands::sync::run(&cli.config, cli.dry_run, cli.json),
+        Command::Cleanup => commands::cleanup::run(&cli.config, cli.dry_run, cli.yes, cli.json),
         Command::Doctor => unreachable!("handled above"),
     };
 

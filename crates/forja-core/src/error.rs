@@ -93,6 +93,30 @@ pub enum ForjaError {
         stderr: String,
         exit_code: Option<i32>,
     },
+
+    #[error("not inside a git repository\n\nrun this from inside a git working tree")]
+    NotAGitRepository,
+
+    #[error(
+        "working tree is dirty ({} file(s) changed)\n\nAborted before any changes. Commit or stash your changes:\n  git stash push -m \"wip\"",
+        files.len()
+    )]
+    DirtyWorkingTree { files: Vec<String> },
+
+    #[error(
+        "branch \"{branch}\" is protected — never synced or deleted automatically\n\nswitch to a feature branch, or edit protected_branches in forja.toml if this is unexpected"
+    )]
+    ProtectedBranch { branch: String },
+
+    #[error(
+        "could not determine the base branch\n\nset flow.base_branch in forja.toml, or configure the remote's default branch with `git remote set-head origin --auto`"
+    )]
+    BaseBranchNotDetected,
+
+    #[error(
+        "integrating {base} stopped due to a conflict\n\nresolve it and continue (`git rebase --continue` or `git merge --continue`), or abort (`git rebase --abort` or `git merge --abort`)"
+    )]
+    RebaseConflict { base: String },
 }
 
 impl ForjaError {
@@ -110,6 +134,11 @@ impl ForjaError {
             | ForjaError::ConfigAlreadyExists { .. } => 2,
             ForjaError::CommandSpawn { .. } => 3,
             ForjaError::CommandFailed { .. } => 1,
+            ForjaError::NotAGitRepository
+            | ForjaError::DirtyWorkingTree { .. }
+            | ForjaError::ProtectedBranch { .. }
+            | ForjaError::BaseBranchNotDetected
+            | ForjaError::RebaseConflict { .. } => 4,
         }
     }
 }
